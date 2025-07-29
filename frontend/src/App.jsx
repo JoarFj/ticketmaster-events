@@ -6,13 +6,36 @@ function App() {
   const [keyword, setKeyword] = useState('')
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    // TODO: Implement API call to backend
-    console.log('Searching for events:', { city, keyword })
-    setLoading(false)
+    setError('')
+    setEvents([])
+
+    try {
+      const response = await fetch(
+        `http://localhost:8000/events?city=${encodeURIComponent(city)}&keyword=${encodeURIComponent(keyword)}`
+      )
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Failed to fetch events')
+      }
+
+      const data = await response.json()
+      setEvents(data.events || [])
+      
+      if (data.events.length === 0) {
+        setError(data.message || 'No events found')
+      }
+    } catch (err) {
+      console.error('Error fetching events:', err)
+      setError(err.message || 'Failed to fetch events. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -49,19 +72,44 @@ function App() {
           </div>
 
           <button type="submit" disabled={loading} className="search-button">
-            {loading ? 'Searching...' : 'Find Events'}
+            {loading ? (
+              <div className="loading-content">
+                <div className="spinner"></div>
+                Searching...
+              </div>
+            ) : (
+              'Find Events'
+            )}
           </button>
         </form>
 
         <div className="results">
-          {events.length === 0 && !loading && (
+          {error && (
+            <div className="error-message">
+              <p>{error}</p>
+            </div>
+          )}
+          
+          {events.length === 0 && !loading && !error && (
             <p className="no-results">No events to display. Try searching!</p>
           )}
           
           {events.map(event => (
             <div key={event.id} className="event-card">
-              <h3>{event.name}</h3>
-              <p>{event.date} - {event.venue}</p>
+              {event.image && (
+                <img src={event.image} alt={event.name} className="event-image" />
+              )}
+              <div className="event-content">
+                <h3>{event.name}</h3>
+                <p className="event-date">{event.date}</p>
+                <p className="event-venue">{event.venue}</p>
+                <p className="event-location">{event.location}</p>
+                {event.url && (
+                  <a href={event.url} target="_blank" rel="noopener noreferrer" className="event-link">
+                    View Details
+                  </a>
+                )}
+              </div>
             </div>
           ))}
         </div>
