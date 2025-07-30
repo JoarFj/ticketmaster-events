@@ -39,7 +39,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  max-width: 500px;
+  max-width: 600px;
   margin: 0 auto;
   padding: 2.5rem;
   border: none;
@@ -48,6 +48,12 @@
   backdrop-filter: blur(10px);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
 }
 
 .form-group {
@@ -65,7 +71,8 @@
   letter-spacing: 0.5px;
 }
 
-.form-group input {
+.form-group input,
+.form-group select {
   padding: 1rem 1.25rem;
   border: 2px solid #e2e8f0;
   border-radius: 12px;
@@ -76,7 +83,8 @@
   font-weight: 500;
 }
 
-.form-group input:focus {
+.form-group input:focus,
+.form-group select:focus {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
@@ -86,6 +94,10 @@
 .form-group input::placeholder {
   color: #a0aec0;
   font-weight: 400;
+}
+
+.form-group select {
+  cursor: pointer;
 }
 
 .search-button {
@@ -320,6 +332,11 @@
   .search-form {
     padding: 2rem 1.5rem;
     margin: 0 1rem;
+  }
+  
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
   }
   
   .results {

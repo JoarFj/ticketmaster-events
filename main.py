@@ -109,8 +109,9 @@ def parse_event_data(event: Dict[Any, Any]) -> Dict[str, Any]:
 
 @app.get("/events")
 async def get_events(
-    city: str = Query(..., description="City to search for events"),
-    keyword: str = Query(..., description="Event keyword or interest")
+    keyword: str = Query(..., description="Event keyword or interest"),
+    city: Optional[str] = Query(None, description="City to search for events"),
+    country: Optional[str] = Query(None, description="Country code (e.g., US, CA, GB)")
 ):
     """Get events from Ticketmaster API based on city and keyword"""
     
@@ -123,11 +124,18 @@ async def get_events(
     try:
         params = {
             "apikey": TICKETMASTER_API_KEY,
-            "city": city,
             "keyword": keyword,
-            "size": 20,  # Number of events to return
+            "size": 200,  # Number of events to return (max allowed by Ticketmaster)
             "sort": "date,asc"  # Sort by date ascending
         }
+        
+        # Only add city if provided
+        if city and city.strip():
+            params["city"] = city.strip()
+            
+        # Only add country if provided
+        if country and country.strip():
+            params["countryCode"] = country.strip()
         
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -151,10 +159,18 @@ async def get_events(
             events = embedded.get("events", [])
             
             if not events:
+                location_str = ""
+                if city and country:
+                    location_str = f" in {city}, {country}"
+                elif city:
+                    location_str = f" in {city}"
+                elif country:
+                    location_str = f" in {country}"
+                
                 return {
                     "events": [],
                     "total": 0,
-                    "message": f"No events found for '{keyword}' in {city}"
+                    "message": f"No events found for '{keyword}'{location_str}"
                 }
             
             # Parse events
@@ -164,6 +180,7 @@ async def get_events(
                 "events": parsed_events,
                 "total": len(parsed_events),
                 "city": city,
+                "country": country,
                 "keyword": keyword
             }
             
