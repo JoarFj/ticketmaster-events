@@ -109,11 +109,11 @@ def parse_event_data(event: Dict[Any, Any]) -> Dict[str, Any]:
 
 @app.get("/events")
 async def get_events(
-    keyword: str = Query(..., description="Event keyword or interest"),
+    keyword: Optional[str] = Query(None, description="Event keyword or interest"),
     city: Optional[str] = Query(None, description="City to search for events"),
     country: Optional[str] = Query(None, description="Country code (e.g., US, CA, GB)")
 ):
-    """Get events from Ticketmaster API based on city and keyword"""
+    """Get events from Ticketmaster API based on city, country, and/or keyword"""
     
     if not TICKETMASTER_API_KEY or TICKETMASTER_API_KEY == "your_api_key_here":
         raise HTTPException(
@@ -121,13 +121,23 @@ async def get_events(
             detail="Ticketmaster API key not configured. Please add your API key to the .env file."
         )
     
+    # Validate that at least one search parameter is provided
+    if not keyword and not city and not country:
+        raise HTTPException(
+            status_code=400,
+            detail="Please provide at least one search parameter: keyword, city, or country."
+        )
+    
     try:
         params = {
             "apikey": TICKETMASTER_API_KEY,
-            "keyword": keyword,
             "size": 200,  # Number of events to return (max allowed by Ticketmaster)
             "sort": "date,asc"  # Sort by date ascending
         }
+        
+        # Only add keyword if provided
+        if keyword and keyword.strip():
+            params["keyword"] = keyword.strip()
         
         # Only add city if provided
         if city and city.strip():
@@ -159,18 +169,31 @@ async def get_events(
             events = embedded.get("events", [])
             
             if not events:
-                location_str = ""
-                if city and country:
-                    location_str = f" in {city}, {country}"
-                elif city:
-                    location_str = f" in {city}"
-                elif country:
-                    location_str = f" in {country}"
+                # Build search description
+                search_parts = []
+                if keyword:
+                    search_parts.append(f"'{keyword}'")
+                
+                location_parts = []
+                if city:
+                    location_parts.append(city)
+                if country:
+                    location_parts.append(country)
+                
+                if location_parts:
+                    location_str = f" in {', '.join(location_parts)}"
+                else:
+                    location_str = ""
+                
+                if search_parts:
+                    search_str = ' '.join(search_parts)
+                else:
+                    search_str = "events"
                 
                 return {
                     "events": [],
                     "total": 0,
-                    "message": f"No events found for '{keyword}'{location_str}"
+                    "message": f"No {search_str} found{location_str}"
                 }
             
             # Parse events

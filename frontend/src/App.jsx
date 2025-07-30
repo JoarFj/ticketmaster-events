@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import './App.css'
 
 function App() {
@@ -8,6 +8,103 @@ function App() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [citySuggestions, setCitySuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const debounceRef = useRef(null)
+  const cityInputRef = useRef(null)
+
+  // Function to fetch city suggestions from OpenStreetMap
+  const fetchCitySuggestions = async (query) => {
+    if (!query || query.length < 2) {
+      setCitySuggestions([])
+      return
+    }
+
+    try {
+      console.log('Searching for:', query)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=10&type=city,town,village`
+      )
+      const data = await response.json()
+      console.log('API response:', data)
+      
+      // Filter and format city suggestions
+      const cities = data
+        .filter(item => {
+          // More flexible filtering for cities
+          const isCity = item.type === 'city' || 
+                         item.type === 'town' || 
+                         item.type === 'village' ||
+                         item.class === 'place' ||
+                         (item.address && (item.address.city || item.address.town || item.address.village))
+          return isCity
+        })
+        .map(item => {
+          // Better name extraction
+          const cityName = item.address?.city || 
+                          item.address?.town || 
+                          item.address?.village || 
+                          item.display_name.split(',')[0]
+          
+          return {
+            name: cityName,
+            fullName: item.display_name,
+            country: item.address?.country || '',
+            countryCode: item.address?.country_code?.toUpperCase() || ''
+          }
+        })
+        .filter(city => city.name && city.country) // Only include complete results
+        .slice(0, 6) // Limit to 6 suggestions
+
+      console.log('Processed cities:', cities)
+      setCitySuggestions(cities)
+    } catch (error) {
+      console.error('Error fetching city suggestions:', error)
+      setCitySuggestions([])
+    }
+  }
+
+  // Handle city input changes with debouncing
+  const handleCityChange = (e) => {
+    const value = e.target.value
+    setCity(value)
+    
+    // Clear previous timeout
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
+    
+    // Set new timeout for API call
+    debounceRef.current = setTimeout(() => {
+      fetchCitySuggestions(value)
+    }, 150) // 150ms delay (faster response)
+    
+    setShowSuggestions(true)
+  }
+
+  // Handle selecting a city suggestion
+  const handleCitySelect = (suggestion) => {
+    setCity(suggestion.name)
+    if (suggestion.countryCode) {
+      setCountry(suggestion.countryCode)
+    }
+    setCitySuggestions([])
+    setShowSuggestions(false)
+  }
+
+  // Hide suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (cityInputRef.current && !cityInputRef.current.contains(event.target)) {
+        setShowSuggestions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -17,9 +114,11 @@ function App() {
 
     try {
       // Build query parameters
-      const params = new URLSearchParams({
-        keyword: keyword
-      })
+      const params = new URLSearchParams()
+      
+      if (keyword.trim()) {
+        params.append('keyword', keyword)
+      }
       
       if (city.trim()) {
         params.append('city', city)
@@ -27,6 +126,13 @@ function App() {
       
       if (country) {
         params.append('country', country)
+      }
+      
+      // Ensure we have at least one search parameter
+      if (!keyword.trim() && !city.trim() && !country) {
+        setError('Please enter at least a city, country, or keyword to search.')
+        setLoading(false)
+        return
       }
       
       console.log('Search parameters:', params.toString())
@@ -61,15 +167,31 @@ function App() {
       <main className="main">
         <form onSubmit={handleSubmit} className="search-form">
           <div className="form-row">
-            <div className="form-group">
+            <div className="form-group autocomplete-container" ref={cityInputRef}>
               <label htmlFor="city">City (Optional)</label>
               <input
                 type="text"
                 id="city"
                 value={city}
-                onChange={(e) => setCity(e.target.value)}
+                onChange={handleCityChange}
                 placeholder="Enter city name (optional)"
+                autoComplete="off"
               />
+              
+              {showSuggestions && citySuggestions.length > 0 && (
+                <div className="autocomplete-dropdown">
+                  {citySuggestions.map((suggestion, index) => (
+                    <div
+                      key={index}
+                      className="autocomplete-item"
+                      onClick={() => handleCitySelect(suggestion)}
+                    >
+                      <div className="city-name">{suggestion.name}</div>
+                      <div className="city-country">{suggestion.country}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="form-group">
@@ -101,14 +223,13 @@ function App() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="keyword">Interest/Keyword</label>
+            <label htmlFor="keyword">Interest/Keyword (Optional)</label>
             <input
               type="text"
               id="keyword"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="e.g., music, sports, theater"
-              required
+              placeholder="e.g., music, sports, theater (leave blank for all events)"
             />
           </div>
 
