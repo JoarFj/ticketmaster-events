@@ -2,6 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import './App.css'
 
 function App() {
+  // Use environment variable for API URL, fallback to localhost for development
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+  
   const [city, setCity] = useState('')
   const [country, setCountry] = useState('')
   const [keyword, setKeyword] = useState('')
@@ -214,7 +217,7 @@ function App() {
       }
       
       console.log('Search parameters:', params.toString())
-      const response = await fetch(`http://localhost:8000/events?${params.toString()}`)
+      const response = await fetch(`${API_URL}/events?${params.toString()}`)
       
       if (!response.ok) {
         const errorData = await response.json()
