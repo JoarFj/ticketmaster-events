@@ -3,9 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import httpx
 import os
+import asyncio
 from dotenv import load_dotenv
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -34,6 +35,15 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "service": "event-finder-api"}
+
+@app.get("/test-weather")
+def test_weather_param(include_weather: Optional[str] = Query("false")):
+    include_weather_bool = include_weather.lower() in ("true", "1", "yes", "on") if include_weather else False
+    return {
+        "include_weather_raw": include_weather,
+        "include_weather_bool": include_weather_bool,
+        "type": str(type(include_weather))
+    }
 
 def parse_event_data(event: Dict[Any, Any]) -> Dict[str, Any]:
     """Parse Ticketmaster event data into our format"""
@@ -104,16 +114,149 @@ def parse_event_data(event: Dict[Any, Any]) -> Dict[str, Any]:
             "location": "Unknown Location",
             "url": event.get("url", ""),
             "coordinates": None,
-            "image": ""
+            "image": "",
+            "weather": None
         }
+
+async def fetch_weather_data(lat: float, lon: float, event_date: str) -> Optional[Dict[str, Any]]:
+    """Fetch weather data from OpenMeteo API for given coordinates and date"""
+    try:
+        # Parse the event date to check if it's within 7 days
+        if not event_date or event_date == "Unknown Date":
+            return None
+            
+        # Parse date - handle various formats from Ticketmaster
+        event_datetime = None
+        if " at " in event_date:
+            date_part = event_date.split(" at ")[0]
+        else:
+            date_part = event_date
+            
+        try:
+            event_datetime = datetime.strptime(date_part, "%Y-%m-%d")
+        except ValueError:
+            # Try alternative format
+            try:
+                event_datetime = datetime.strptime(date_part, "%m/%d/%Y")
+            except ValueError:
+                return None
+        
+        # Check if event is within 7 days
+        now = datetime.now().date()  # Get just the date part
+        seven_days_from_now = now + timedelta(days=7)
+        event_date = event_datetime.date()  # Get just the date part
+        
+        if event_date < now or event_date > seven_days_from_now:
+            return None
+        
+        # Calculate days from now for the forecast
+        days_diff = (event_date - now).days
+        if days_diff < 0:
+            days_diff = 0
+        
+        async with httpx.AsyncClient() as client:
+            # OpenMeteo API call
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode,windspeed_10m_max",
+                "forecast_days": min(7, days_diff + 2),  # Get a few extra days to be safe
+                "timezone": "auto"
+            }
+            
+            response = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params=params,
+                timeout=5.0
+            )
+            
+            if response.status_code != 200:
+                return None
+                
+            weather_data = response.json()
+            daily = weather_data.get("daily", {})
+            
+            # Find the weather for the event date
+            dates = daily.get("time", [])
+            event_date_str = event_date.strftime("%Y-%m-%d")
+            
+            weather_index = None
+            for i, date_str in enumerate(dates):
+                if date_str == event_date_str:
+                    weather_index = i
+                    break
+            
+            if weather_index is None:
+                return None
+                
+            # Get weather code description
+            weather_code = daily.get("weathercode", [])[weather_index] if weather_index < len(daily.get("weathercode", [])) else None
+            weather_description = get_weather_description(weather_code)
+            
+            return {
+                "date": event_date_str,
+                "temperature_max": daily.get("temperature_2m_max", [])[weather_index] if weather_index < len(daily.get("temperature_2m_max", [])) else None,
+                "temperature_min": daily.get("temperature_2m_min", [])[weather_index] if weather_index < len(daily.get("temperature_2m_min", [])) else None,
+                "precipitation": daily.get("precipitation_sum", [])[weather_index] if weather_index < len(daily.get("precipitation_sum", [])) else None,
+                "wind_speed": daily.get("windspeed_10m_max", [])[weather_index] if weather_index < len(daily.get("windspeed_10m_max", [])) else None,
+                "description": weather_description,
+                "weather_code": weather_code
+            }
+            
+    except Exception as e:
+        print(f"Error fetching weather data: {e}")
+        return None
+
+def get_weather_description(weather_code: Optional[int]) -> str:
+    """Convert weather code to human-readable description"""
+    if weather_code is None:
+        return "Unknown"
+    
+    weather_codes = {
+        0: "Clear sky",
+        1: "Mainly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Fog",
+        48: "Depositing rime fog",
+        51: "Light drizzle",
+        53: "Moderate drizzle",
+        55: "Dense drizzle",
+        56: "Light freezing drizzle",
+        57: "Dense freezing drizzle",
+        61: "Slight rain",
+        63: "Moderate rain",
+        65: "Heavy rain",
+        66: "Light freezing rain",
+        67: "Heavy freezing rain",
+        71: "Slight snow fall",
+        73: "Moderate snow fall",
+        75: "Heavy snow fall",
+        77: "Snow grains",
+        80: "Slight rain showers",
+        81: "Moderate rain showers",
+        82: "Violent rain showers",
+        85: "Slight snow showers",
+        86: "Heavy snow showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm with slight hail",
+        99: "Thunderstorm with heavy hail"
+    }
+    
+    return weather_codes.get(weather_code, f"Weather code {weather_code}")
 
 @app.get("/events")
 async def get_events(
     keyword: Optional[str] = Query(None, description="Event keyword or interest"),
     city: Optional[str] = Query(None, description="City to search for events"),
-    country: Optional[str] = Query(None, description="Country code (e.g., US, CA, GB)")
+    country: Optional[str] = Query(None, description="Country code (e.g., US, CA, GB)"),
+    include_weather: Optional[str] = Query("false", description="Include weather forecast for events within 7 days")
 ):
     """Get events from Ticketmaster API based on city, country, and/or keyword"""
+    
+    # Convert string to boolean
+    include_weather_bool = include_weather.lower() in ("true", "1", "yes", "on") if include_weather else False
+    print(f"DEBUG: include_weather='{include_weather}', converted={include_weather_bool}")
     
     if not TICKETMASTER_API_KEY or TICKETMASTER_API_KEY == "your_api_key_here":
         raise HTTPException(
@@ -199,12 +342,30 @@ async def get_events(
             # Parse events
             parsed_events = [parse_event_data(event) for event in events]
             
+            # Add weather data if requested
+            if include_weather_bool:
+                # Process each event individually to add weather data
+                for event in parsed_events:
+                    if event.get("coordinates") and event.get("date"):
+                        try:
+                            weather_data = await fetch_weather_data(
+                                event["coordinates"]["lat"],
+                                event["coordinates"]["lng"],
+                                event["date"]
+                            )
+                            if weather_data:
+                                event["weather"] = weather_data
+                        except Exception as e:
+                            print(f"Error fetching weather for event {event.get('name', 'Unknown')}: {e}")
+                            # Continue processing other events
+            
             return {
                 "events": parsed_events,
                 "total": len(parsed_events),
                 "city": city,
                 "country": country,
-                "keyword": keyword
+                "keyword": keyword,
+                "weather_included": include_weather_bool
             }
             
     except httpx.TimeoutException:

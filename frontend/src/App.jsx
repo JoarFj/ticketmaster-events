@@ -14,6 +14,7 @@ function App() {
   const [sortBy, setSortBy] = useState('date-asc') // Default: oldest first (Ticketmaster default)
   const [currentPage, setCurrentPage] = useState(1)
   const [resultsPerPage, setResultsPerPage] = useState(30)
+  const [includeWeather, setIncludeWeather] = useState(false)
   const debounceRef = useRef(null)
   const cityInputRef = useRef(null)
 
@@ -201,6 +202,10 @@ function App() {
         params.append('country', country)
       }
       
+      if (includeWeather) {
+        params.append('include_weather', 'true')
+      }
+      
       // Ensure we have at least one search parameter
       if (!keyword.trim() && !city.trim() && !country) {
         setError('Please enter at least a city, country, or keyword to search.')
@@ -376,6 +381,21 @@ function App() {
             )}
           </div>
 
+          <div className="form-group weather-toggle">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={includeWeather}
+                onChange={(e) => setIncludeWeather(e.target.checked)}
+              />
+              <span className="checkmark"></span>
+              Include weather forecast (for events within 7 days)
+            </label>
+            <div className="weather-info">
+              <small>🌤️ Weather data helps you plan what to wear to outdoor events</small>
+            </div>
+          </div>
+
           <button type="submit" disabled={loading} className="search-button">
             {loading ? (
               <div className="loading-content">
@@ -456,6 +476,29 @@ function App() {
                     <p className="event-date">{event.date}</p>
                     <p className="event-venue">{event.venue}</p>
                     <p className="event-location">{event.location}</p>
+                    {event.weather && (
+                      <div className="weather-info">
+                        <div className="weather-header">
+                          <span className="weather-icon">🌤️</span>
+                          <span className="weather-title">Weather Forecast</span>
+                        </div>
+                        <div className="weather-details">
+                          <span className="weather-temp">
+                            {event.weather.temperature_min !== null && event.weather.temperature_max !== null ? 
+                              `${Math.round(event.weather.temperature_min)}°C - ${Math.round(event.weather.temperature_max)}°C` :
+                              'Temperature: N/A'
+                            }
+                          </span>
+                          <span className="weather-desc">{event.weather.description}</span>
+                          {event.weather.precipitation !== null && event.weather.precipitation > 0 && (
+                            <span className="weather-rain">🌧️ {event.weather.precipitation}mm precipitation</span>
+                          )}
+                          {event.weather.wind_speed !== null && (
+                            <span className="weather-wind">💨 {Math.round(event.weather.wind_speed / 3.6)} m/s wind</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {event.url && (
                       <a href={event.url} target="_blank" rel="noopener noreferrer" className="event-link">
                         View Details

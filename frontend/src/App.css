@@ -241,6 +241,77 @@
   color: #2d3748;
 }
 
+/* Weather Toggle Styling */
+.weather-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  font-weight: 500;
+  color: #4a5568;
+  font-size: 0.95rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  opacity: 0;
+  position: absolute;
+}
+
+.checkmark {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #667eea;
+  border-radius: 4px;
+  position: relative;
+  background: white;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.checkbox-label input[type="checkbox"]:checked + .checkmark {
+  background: #667eea;
+  border-color: #667eea;
+}
+
+.checkbox-label input[type="checkbox"]:checked + .checkmark::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 2px;
+  width: 6px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.checkbox-label:hover .checkmark {
+  border-color: #5a67d8;
+  transform: scale(1.05);
+}
+
+.weather-info {
+  margin-left: 32px;
+}
+
+.weather-info small {
+  color: #718096;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
 .search-button {
   padding: 1rem 2rem;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -619,6 +690,56 @@
 .event-link:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+}
+
+/* Weather Display Styles */
+.weather-info {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, #e8f4fd 0%, #f0f9ff 100%);
+  border-radius: 12px;
+  border: 1px solid #bfdbfe;
+}
+
+.weather-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  color: #1e40af;
+  font-size: 0.9rem;
+}
+
+.weather-icon {
+  font-size: 1.1rem;
+}
+
+.weather-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.weather-temp {
+  font-weight: 600;
+  color: #1e40af;
+  font-size: 0.95rem;
+}
+
+.weather-desc {
+  color: #3730a3;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.weather-rain,
+.weather-wind {
+  color: #4338ca;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 @media (max-width: 768px) {
