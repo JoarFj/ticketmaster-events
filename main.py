@@ -36,14 +36,6 @@ def read_root():
 def health_check():
     return {"status": "healthy", "service": "event-finder-api"}
 
-@app.get("/test-weather")
-def test_weather_param(include_weather: Optional[str] = Query("false")):
-    include_weather_bool = include_weather.lower() in ("true", "1", "yes", "on") if include_weather else False
-    return {
-        "include_weather_raw": include_weather,
-        "include_weather_bool": include_weather_bool,
-        "type": str(type(include_weather))
-    }
 
 def parse_event_data(event: Dict[Any, Any]) -> Dict[str, Any]:
     """Parse Ticketmaster event data into our format"""
@@ -105,7 +97,7 @@ def parse_event_data(event: Dict[Any, Any]) -> Dict[str, Any]:
             "image": image_url
         }
     except Exception as e:
-        print(f"Error parsing event: {e}")
+        # Return basic event structure if parsing fails
         return {
             "id": event.get("id", ""),
             "name": event.get("name", "Unknown Event"),
@@ -204,7 +196,7 @@ async def fetch_weather_data(lat: float, lon: float, event_date: str) -> Optiona
             }
             
     except Exception as e:
-        print(f"Error fetching weather data: {e}")
+        # Return None if weather fetch fails
         return None
 
 def get_weather_description(weather_code: Optional[int]) -> str:
@@ -256,7 +248,6 @@ async def get_events(
     
     # Convert string to boolean
     include_weather_bool = include_weather.lower() in ("true", "1", "yes", "on") if include_weather else False
-    print(f"DEBUG: include_weather='{include_weather}', converted={include_weather_bool}")
     
     if not TICKETMASTER_API_KEY or TICKETMASTER_API_KEY == "your_api_key_here":
         raise HTTPException(
@@ -356,8 +347,8 @@ async def get_events(
                             if weather_data:
                                 event["weather"] = weather_data
                         except Exception as e:
-                            print(f"Error fetching weather for event {event.get('name', 'Unknown')}: {e}")
-                            # Continue processing other events
+                            # Continue processing other events if weather fetch fails
+                            pass
             
             return {
                 "events": parsed_events,
