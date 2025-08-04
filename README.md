@@ -9,7 +9,6 @@ A modern event discovery app built with FastAPI + React that searches Ticketmast
 - Interactive help with clickable keyword suggestions  
 - Sort by date, name, or venue
 - Pagination with customizable results per page
-- Responsive glassmorphism design
 
 ## Project Structure
 ```
