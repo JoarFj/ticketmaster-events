@@ -3,7 +3,8 @@ import './App.css'
 
 function App() {
   // Use environment variable for API URL, fallback to localhost for development
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+  // Remove trailing slash if present to avoid double slashes in URLs
+  const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
   
   const [city, setCity] = useState('')
   const [country, setCountry] = useState('')
