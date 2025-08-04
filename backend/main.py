@@ -22,7 +22,7 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 if ENVIRONMENT == "production":
     # Production CORS - add your actual domains here
     allowed_origins = [
-        "https://your-app-name.vercel.app",  # Replace with your actual Vercel domain
+        "https://ticketmaster-events-flame.vercel.app/",  # Replace with your actual Vercel domain
         # Add any other production domains here
     ]
 else:
