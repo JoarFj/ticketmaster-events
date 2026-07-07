@@ -1,20 +1,35 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import httpx
 import os
 import asyncio
+import logging
 from dotenv import load_dotenv
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("event-finder")
 
 app = FastAPI(
     title="Event Finder API",
     description="API for discovering events using Ticketmaster API",
     version="1.0.0"
 )
+
+# Per-client rate limiting. The public frontend bundle exposes this backend's
+# URL, and CORS only restricts browsers (not scripts), so /events must be
+# throttled to protect the shared Ticketmaster API quota from abuse.
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configure CORS for development and production
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -38,7 +53,7 @@ else:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_credentials=False,  # No cookies/auth are used; keep this off
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -256,7 +271,9 @@ def get_weather_description(weather_code: Optional[int]) -> str:
     return weather_codes.get(weather_code, f"Weather code {weather_code}")
 
 @app.get("/events")
+@limiter.limit("30/minute")
 async def get_events(
+    request: Request,
     keyword: Optional[str] = Query(None, description="Event keyword or interest"),
     city: Optional[str] = Query(None, description="City to search for events"),
     country: Optional[str] = Query(None, description="Country code (e.g., US, CA, GB)"),
@@ -307,11 +324,13 @@ async def get_events(
             )
             
             if response.status_code == 401:
-                raise HTTPException(status_code=401, detail="Invalid Ticketmaster API key")
+                logger.error("Ticketmaster rejected the API key (401)")
+                raise HTTPException(status_code=502, detail="Events service is misconfigured")
             elif response.status_code != 200:
+                logger.error("Ticketmaster API error %s: %s", response.status_code, response.text)
                 raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Ticketmaster API error: {response.text}"
+                    status_code=502,
+                    detail="Events service returned an error, please try again later"
                 )
             
             data = response.json()
@@ -351,22 +370,28 @@ async def get_events(
             # Parse events
             parsed_events = [parse_event_data(event) for event in events]
             
-            # Add weather data if requested
+            # Add weather data if requested. Fetch all forecasts concurrently
+            # rather than sequentially so a large result set isn't slowed by
+            # one blocking request per event.
             if include_weather_bool:
-                # Process each event individually to add weather data
-                for event in parsed_events:
-                    if event.get("coordinates") and event.get("date"):
-                        try:
-                            weather_data = await fetch_weather_data(
-                                event["coordinates"]["lat"],
-                                event["coordinates"]["lng"],
-                                event["date"]
-                            )
-                            if weather_data:
-                                event["weather"] = weather_data
-                        except Exception as e:
-                            # Continue processing other events if weather fetch fails
-                            pass
+                weather_events = [
+                    e for e in parsed_events
+                    if e.get("coordinates") and e.get("date")
+                ]
+                weather_results = await asyncio.gather(
+                    *(
+                        fetch_weather_data(
+                            e["coordinates"]["lat"],
+                            e["coordinates"]["lng"],
+                            e["date"],
+                        )
+                        for e in weather_events
+                    ),
+                    return_exceptions=True,
+                )
+                for event, weather_data in zip(weather_events, weather_results):
+                    if weather_data and not isinstance(weather_data, Exception):
+                        event["weather"] = weather_data
             
             return {
                 "events": parsed_events,
@@ -378,12 +403,25 @@ async def get_events(
             }
             
     except httpx.TimeoutException:
-        raise HTTPException(status_code=408, detail="Request timeout - Ticketmaster API is slow")
+        raise HTTPException(status_code=504, detail="The events service timed out, please try again")
     except httpx.RequestError as e:
-        raise HTTPException(status_code=503, detail=f"Network error: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error("Network error contacting Ticketmaster: %s", e)
+        raise HTTPException(status_code=503, detail="Could not reach the events service, please try again later")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Unexpected error handling /events")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # proxy_headers/forwarded_allow_ips let uvicorn trust Render's proxy so the
+    # rate limiter keys on the real client IP (X-Forwarded-For) instead of the
+    # proxy's address.
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )

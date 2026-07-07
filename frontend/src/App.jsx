@@ -83,10 +83,12 @@ function App() {
       clearTimeout(debounceRef.current)
     }
     
-    // Set new timeout for API call
+    // Set new timeout for API call. Nominatim's usage policy allows at most
+    // ~1 request/second, so debounce at 1s to stay compliant and avoid getting
+    // users' IPs rate-limited or blocked.
     debounceRef.current = setTimeout(() => {
       fetchCitySuggestions(value)
-    }, 150) // 150ms delay (faster response)
+    }, 1000)
     
     setShowSuggestions(true)
   }
